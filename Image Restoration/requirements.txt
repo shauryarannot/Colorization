@@ -1,0 +1,8 @@
+streamlit>=1.25.0
+opencv-python>=4.7.0
+numpy>=1.23.5
+scikit-image>=0.19.3
+PyWavelets>=1.4.1
+Pillow>=9.5.0
+python-dateutil>=2.8.2
+matplotlib>=3.7.1
