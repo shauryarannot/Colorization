@@ -1,94 +1,107 @@
 #!/usr/bin/env python
 # coding: utf-8
 
-# In[6]:
-
-
-
-# import the necessary packages
 import numpy as np
 import cv2
 import streamlit as st
 from PIL import Image
+import os
 
-
-
-def colorizer(img):
-    img = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
-    img = cv2.cvtColor(img, cv2.COLOR_GRAY2RGB)
-    # load our serialized black and white colorizer model and cluster
-    # center points from disk
-    #Note: Please take in account the directories of your local system.
-    prototxt = r"C:\Users\ranno\vsCode\Ai Black and white image colorization with OpenCV\models\models_colorization_deploy_v2.prototxt"
-    model = r"C:\Users\ranno\vsCode\Ai Black and white image colorization with OpenCV\models\colorization_release_v2.caffemodel"
-    points = r"C:\Users\ranno\vsCode\Ai Black and white image colorization with OpenCV\models\pts_in_hull.npy"
+def colorize_image(img):
+    # Convert to grayscale if not already grayscale
+    if len(img.shape) == 3 and img.shape[2] == 3:
+        img = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
+    
+    # Convert grayscale to RGB format
+    if len(img.shape) == 2:
+        img = cv2.cvtColor(img, cv2.COLOR_GRAY2RGB)
+    
+    # Load model files
+    model_dir = "models"
+    prototxt = os.path.join(model_dir, "models_colorization_deploy_v2.prototxt")
+    model = os.path.join(model_dir, "colorization_release_v2.caffemodel")
+    points = os.path.join(model_dir, "pts_in_hull.npy")
+    
+    # Load the model
     net = cv2.dnn.readNetFromCaffe(prototxt, model)
     pts = np.load(points)
-    # add the cluster centers as 1x1 convolutions to the model
+    
+    # Add the cluster centers as 1x1 convolutions to the model
     class8 = net.getLayerId("class8_ab")
     conv8 = net.getLayerId("conv8_313_rh")
     pts = pts.transpose().reshape(2, 313, 1, 1)
     net.getLayer(class8).blobs = [pts.astype("float32")]
     net.getLayer(conv8).blobs = [np.full([1, 313], 2.606, dtype="float32")]
-    # scale the pixel intensities to the range [0, 1], and then convert the image from the BGR to Lab color space
+    
+    # Preprocess the image
     scaled = img.astype("float32") / 255.0
     lab = cv2.cvtColor(scaled, cv2.COLOR_RGB2LAB)
-    # resize the Lab image to 224x224 (the dimensions the colorization
-    #network accepts), split channels, extract the 'L' channel, and then perform mean centering
+    
+    # Resize the Lab image to 224x224 and extract the 'L' channel
     resized = cv2.resize(lab, (224, 224))
     L = cv2.split(resized)[0]
     L -= 50
-    # pass the L channel through the network which will *predict* the 'a' and 'b' channel values
+    
+    # Pass the L channel through the network to predict 'a' and 'b' channels
     net.setInput(cv2.dnn.blobFromImage(L))
     ab = net.forward()[0, :, :, :].transpose((1, 2, 0))
-    # resize the predicted 'ab' volume to the same dimensions as our input image
+    
+    # Resize the predicted 'ab' volume to match input image dimensions
     ab = cv2.resize(ab, (img.shape[1], img.shape[0]))
-    # grab the 'L' channel from the *original* input image (not the
-    # resized one) and concatenate the original 'L' channel with the predicted 'ab' channels
+    
+    # Combine original L channel with predicted ab channels
     L = cv2.split(lab)[0]
     colorized = np.concatenate((L[:, :, np.newaxis], ab), axis=2)
-    # convert the output image from the Lab color space to RGB, then clip any values that fall outside the range [0, 1]
+    
+    # Convert from Lab to RGB and normalize values
     colorized = cv2.cvtColor(colorized, cv2.COLOR_LAB2RGB)
     colorized = np.clip(colorized, 0, 1)
-    # the current colorized image is represented as a floating point
-    # data type in the range [0, 1] -- let's convert to an unsigned 8-bit integer representation in the range [0, 255]
+    
+    # Convert to 8-bit integer format
     colorized = (255 * colorized).astype("uint8")
-    # Return the colorized images
+    
     return colorized
 
-##########################################################################################################
+def main():
+    st.title("B&W Image Colorizer")
+    st.write("Upload a black and white image to colorize it with AI.")
     
-st.write("""
-          # Colorizing Balck & White image
-          """
-          )
-
-st.write("This is an app to turn Colorize your B&W images.")
-
-file = st.sidebar.file_uploader("Please upload an image file", type=["jpg", "png"])
-
-if file is None:
-    st.text("You haven't uploaded an image file")
-else:
-    image = Image.open(file)
-    img = np.array(image)
-
-    col1, col2 = st.columns(2)
+    # Create a sidebar file uploader
+    file = st.sidebar.file_uploader("Upload an image", type=["jpg", "jpeg", "png"])
     
-    with col1:
-        st.text("Your original image")
-        st.image(image, use_column_width=True)
-    
-    with col2:
-        st.text("Your colorized image")
-        color = colorizer(img)
-        st.image(color, use_column_width=True)
-    
-    print("done!")
+    if file is None:
+        st.info("Please upload an image file")
+    else:
+        # Display a spinner while processing
+        with st.spinner("Colorizing image..."):
+            image = Image.open(file)
+            img = np.array(image)
+            
+            # Create two columns for display
+            col1, col2 = st.columns(2)
+            
+            with col1:
+                st.subheader("Original Image")
+                st.image(image, use_container_width=True)
+                
+            with col2:
+                st.subheader("Colorized Image")
+                colorized_img = colorize_image(img)
+                st.image(colorized_img, use_container_width=True)
+                
+        st.success("Colorization complete!")
+        
+        # Add download button for the colorized image
+        colorized_pil = Image.fromarray(colorized_img)
+        buf = io.BytesIO()
+        colorized_pil.save(buf, format="PNG")
+        btn = st.download_button(
+            label="Download Colorized Image",
+            data=buf.getvalue(),
+            file_name="colorized_image.png",
+            mime="image/png"
+        )
 
-
-# In[ ]:
-
-
-
-
+if __name__ == "__main__":
+    import io  # Import here to avoid issues with download button
+    main()
