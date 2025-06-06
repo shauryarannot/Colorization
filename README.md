@@ -1,4 +1,4 @@
-# Advanced Image Restoration and Denoising App
+# DeNoir-Advanced Image Restoration and Denoising App
 
 ## Overview
 
